@@ -3,36 +3,47 @@
 % ======================================================================
 %  Rapport de projet de validation — Introduction to Deep Learning
 %  Reproduction réduite de DINO (Caron et al., ICCV 2021) sur STL-10
+%  Mise en forme d'après l'Academic Report Template (Overleaf).
 % ======================================================================
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 % Utilise le français si la langue est installée (Overleaf), sinon repli anglais.
 \IfFileExists{french.ldf}{\usepackage[french]{babel}}{\usepackage[english]{babel}}
+\usepackage[a4paper,margin=2cm]{geometry}
+\usepackage{setspace}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
-\usepackage{geometry}
-\usepackage{xcolor}
-\usepackage{hyperref}
 \usepackage{caption}
 \usepackage{enumitem}
-\geometry{margin=2.4cm}
+\usepackage{xcolor}
+\usepackage{hyperref}
 \hypersetup{colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black}
-
-% Marqueur pour les valeurs à compléter après le run Colab.
-% Après avoir lancé le notebook, remplacer chaque \TODO{...} par le chiffre obtenu
-% (cf. results/all_results.json) puis recompiler.
-\newcommand{\TODO}[1]{{\color{red}\textbf{[#1]}}}
-
-\title{\textbf{Reproduction réduite de DINO}\\[2pt]
-\large \emph{Emerging Properties in Self-Supervised Vision Transformers}\\
-sur STL-10 avec un ViT-Tiny}
-\author{Namie Pajot \quad Alexandra Arucan \quad Mael Zapata \quad Philipp Widenfels \\ \small Albert School --- Bachelor Business \& Data (3\textsuperscript{e} année) \\ \small Cours : Introduction to Deep Learning --- A. Bouru--Gazeau}
-\date{\today}
+\onehalfspacing
 
 \begin{document}
-\maketitle
+
+% ---------------------------- Page de titre ----------------------------
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries Reproduction réduite de DINO\par}
+\vspace{0.7cm}
+{\Large\itshape Emerging Properties in Self-Supervised Vision Transformers\par}
+\vspace{0.3cm}
+{\large sur STL-10 avec un ViT-Tiny\par}
+\vspace{3cm}
+{\large\bfseries Namie Pajot \quad Alexandra Arucan \quad Mael Zapata \quad Philipp Widenfels\par}
+\vspace{1.2cm}
+{\large Albert School --- Bachelor Business \& Data (3\textsuperscript{e} année)\par}
+\vspace{0.4cm}
+{Cours : Introduction to Deep Learning \quad---\quad Encadrant : A.~Bouru--Gazeau\par}
+\vfill
+{\large \today\par}
+\end{titlepage}
+
+\pagenumbering{roman}
 
 \begin{abstract}
 \noindent
@@ -40,11 +51,12 @@ Nous reproduisons, dans un cadre volontairement réduit mais rigoureux, l'idée 
 \textbf{DINO}~\cite{caron2021dino} : l'apprentissage auto-supervisé de représentations visuelles
 par \emph{self-distillation} avec un réseau enseignant construit comme moyenne mobile
 exponentielle (EMA) de l'étudiant, sans aucune étiquette. Nous entraînons un Vision Transformer
-\emph{ViT-Tiny} (patch 8, $\sim$5--6\,M paramètres) sur le jeu de données STL-10, évaluons la
+\emph{ViT-Tiny} (patch 8 ; \emph{backbone} $\sim$5,5\,M paramètres, $\sim$11\,M avec la tête de
+projection) sur le jeu de données STL-10, évaluons la
 qualité des représentations gelées par un classifieur $k$-NN, et comparons à deux lignes de base
-de même architecture (initialisation aléatoire et entraînement supervisé). Nous reproduisons
-qualitativement la propriété émergente phare du papier --- des cartes d'auto-attention qui
-segmentent les objets sans supervision --- et menons deux ablations exécutées inspirées de la Table~7 du
+de même architecture (initialisation aléatoire et entraînement supervisé). Nous retrouvons
+partiellement la propriété émergente phare du papier --- des cartes d'auto-attention qui se
+structurent autour des objets sans supervision (quoique bruitées à notre échelle) --- et menons deux ablations exécutées inspirées de la Table~7 du
 papier (encodeur à momentum, multi-crop) ; une troisième (température de l'enseignant) est décrite
 mais non exécutée faute de budget. Nous comparons nos \emph{effets relatifs} d'ablation à ceux du
 papier plutôt que les valeurs absolues. Notre but n'est pas
@@ -55,6 +67,13 @@ réduite et que nos ablations en retrouvent qualitativement les conclusions.
 \begin{center}
 \small\textbf{Code, notebook et figures} : \url{https://github.com/Beg1nner4ever/DINO-Saure}
 \end{center}
+
+\vspace{0.5cm}
+\tableofcontents
+\listoffigures
+\listoftables
+\clearpage
+\pagenumbering{arabic}
 
 % ======================================================================
 \section{Introduction}
@@ -74,7 +93,8 @@ production. (ii) \emph{Évaluabilité} : la contribution est à la fois quantita
 $k$-NN de représentations gelées) et qualitative (cartes d'attention qui segmentent les objets),
 ce qui donne un rapport plus riche. (iii) \emph{Faisabilité} : l'algorithme tient en
 $\sim$15 lignes de pseudo-code (Algorithme~1 du papier), ce qui rend une reproduction réduite
-réaliste sur Colab. Les alternatives envisagées (MAE, Barlow Twins, DDPM) ont été écartées
+réaliste sur Colab. Les alternatives envisagées (MAE~\cite{he2022mae}, Barlow
+Twins~\cite{zbontar2021barlow}, DDPM~\cite{ho2020ddpm}) ont été écartées
 respectivement pour un résultat visuel moins frappant à petite échelle, un espace d'ablation plus
 pauvre, et un coût de calcul incompatible avec Colab.
 
@@ -105,7 +125,7 @@ en résume l'architecture.
 \begin{figure}[h]
 \centering
 \includegraphics[width=\linewidth]{../figures/fig_architecture.png}
-\caption{Architecture de DINO. Une image produit 2 vues globales ($96\times96$) et 4 vues locales
+\caption[Architecture de DINO]{Architecture de DINO. Une image produit 2 vues globales ($96\times96$) et 4 vues locales
 ($48\times48$). L'enseignant --- moyenne mobile (EMA) de l'étudiant, non entraîné par
 rétropropagation --- ne traite que les vues globales ; l'étudiant traite toutes les vues. Chaque
 branche enchaîne un ViT-Tiny puis une tête de projection ($K=2048$) ; la perte est l'entropie
@@ -151,8 +171,8 @@ A3).
 Comparé à un entraînement supervisé standard, DINO se distingue par : (i) \emph{absence
 d'étiquettes} --- l'objectif est la cohérence inter-vues, pas la prédiction de classe ; (ii)
 \emph{cible dynamique} --- l'enseignant EMA remplace les étiquettes fixes ; (iii) \emph{pas de
-paires négatives} ni de mémoire de contraste (contrairement à SimCLR/MoCo) et \emph{pas de
-prédicteur} (contrairement à BYOL) ; (iv) \emph{évaluation à features gelées} ($k$-NN), sans
+paires négatives} ni de mémoire de contraste (contrairement à SimCLR~\cite{chen2020simclr} /
+MoCo~\cite{he2020moco}) et \emph{pas de prédicteur} (contrairement à BYOL~\cite{grill2020byol}) ; (iv) \emph{évaluation à features gelées} ($k$-NN), sans
 tête de classification entraînée. Ces choix rendent la méthode simple à implémenter tout en
 produisant des représentations transférables.
 
@@ -198,14 +218,14 @@ expose un drapeau \texttt{FAST\_MODE} ; les réglages fidèles au papier restent
 
 \begin{table}[h]
 \centering
-\caption{Réglages du papier vs. notre reproduction réduite (mode \texttt{FAST\_MODE}).}
+\caption[Réglages : papier vs. reproduction]{Réglages du papier vs. notre reproduction réduite (mode \texttt{FAST\_MODE}).}
 \label{tab:simplif}
 \begin{tabular}{lll}
 \toprule
 \textbf{Élément} & \textbf{Papier (DINO)} & \textbf{Cette repro.} \\
 \midrule
 Jeu de données        & ImageNet-1k (1,28\,M) & STL-10 (adaptatif, $\leq$24\,000) \\
-Backbone              & ViT-S/16, ViT-B/8     & ViT-Tiny/8 ($\sim$5--6\,M) \\
+Backbone              & ViT-S/16, ViT-B/8     & ViT-Tiny/8 (\emph{backbone} $\sim$5,5\,M) \\
 Résolution            & 224                   & 96 (global) / 48 (local) \\
 Époques               & 300                   & $\sim$60 (adaptatif), 20 (ablations) \\
 Taille de batch       & 1024                  & 256 \\
@@ -267,7 +287,7 @@ l'intérêt d'exploiter 20\,000 images \emph{non} étiquetées.
 
 \begin{table}[h]
 \centering
-\caption{Précision $k$-NN top-1 (\%) sur le test STL-10, features gelées, $k=20$.
+\caption[Résultats $k$-NN principaux]{Précision $k$-NN top-1 (\%) sur le test STL-10, features gelées, $k=20$.
 Chiffres à compléter depuis \texttt{results/main\_results.json}.}
 \label{tab:main}
 \begin{tabular}{lc}
@@ -286,7 +306,7 @@ Supervisé (5\,000 images étiquetées)          & 52,6 \\
 \begin{figure}[h]
 \centering
 \includegraphics[width=0.6\linewidth]{../figures/fig_main_results.png}
-\caption{Représentations gelées : précision $k$-NN sur STL-10 (mêmes chiffres que le
+\caption[Comparaison aux lignes de base]{Représentations gelées : précision $k$-NN sur STL-10 (mêmes chiffres que le
 Tableau~\ref{tab:main}). DINO ($37{,}2$\,\%) dépasse largement la borne aléatoire ($27{,}4$\,\%) mais
 reste sous la baseline supervisée de même architecture ($52{,}6$\,\%).}
 \label{fig:main}
@@ -299,17 +319,20 @@ adaptatif (Figure~\ref{fig:adapt}), dont la précision $k$-NN sonde croît de fa
 
 \subsection{Résultat qualitatif : attention émergente}
 La Figure~\ref{fig:attn} montre les cartes d'auto-attention du token \texttt{[CLS]} (dernier
-bloc). Conformément au papier (Figures~1 et~3), différentes têtes se spécialisent sur des régions
-sémantiques distinctes de l'objet, \emph{sans aucune supervision}. C'est la propriété émergente
-phare de DINO ; sa présence à échelle réduite valide qualitativement notre reproduction.
+bloc). On observe une attention spatialement structurée --- certaines têtes se concentrent plutôt
+sur l'objet que sur le fond ---, quoique nettement plus bruitée qu'avec les grands modèles du papier
+(Figures~1 et~3). Cette structuration, même imparfaite avec un ViT-Tiny peu entraîné, va dans le
+sens de la propriété émergente de DINO ; nous l'interprétons comme un indice qualitatif encourageant,
+pas comme une segmentation propre.
 
 \begin{figure}[h]
 \centering
 \includegraphics[width=0.49\linewidth]{../figures/attention_dog.png}\hfill
 \includegraphics[width=0.49\linewidth]{../figures/attention_horse.png}
-\caption{Cartes d'auto-attention par tête (token \texttt{[CLS]}, dernier bloc) sur deux images de
+\caption[Cartes d'auto-attention]{Cartes d'auto-attention par tête (token \texttt{[CLS]}, dernier bloc) sur deux images de
 test STL-10 (\texttt{figures/attention\_dog.png}, \texttt{attention\_horse.png}). Différentes têtes
-se focalisent sur des régions distinctes de l'objet, \emph{sans aucune supervision}.}
+tendent à se concentrer sur l'objet plutôt que sur le fond (attention bruitée à cette échelle
+réduite), \emph{sans aucune supervision}.}
 \label{fig:attn}
 \end{figure}
 
@@ -354,7 +377,7 @@ entropie/divergence KL) corrobore l'effet attendu de $\tau_t$.
 
 \begin{table}[h]
 \centering
-\caption{Résumé des ablations (précision $k$-NN top-1 \%, test STL-10).
+\caption[Résumé des ablations]{Résumé des ablations (précision $k$-NN top-1 \%, test STL-10).
 Source : \texttt{results/all\_results.json}.}
 \label{tab:abl}
 \begin{tabular}{llc}
@@ -373,7 +396,7 @@ A3  & Balayage $\tau_t$ (0,04 / 0,07 / 0,10) & \emph{non réalisé} \\
 \centering
 \includegraphics[width=0.56\linewidth]{../figures/fig_ablations.png}\hfill
 \includegraphics[width=0.40\linewidth]{../figures/fig_multicrop_match.png}
-\caption{\textbf{Gauche} : ablations en cadre réduit. Retirer le momentum (A1) effondre la
+\caption[Ablations et contribution du multi-crop]{\textbf{Gauche} : ablations en cadre réduit. Retirer le momentum (A1) effondre la
 représentation \emph{sous} la borne aléatoire ; retirer le multi-crop (A2) coûte $-5{,}6$ points.
 \textbf{Droite} : la contribution du multi-crop que nous mesurons ($-5{,}6$ pt) coïncide presque
 avec celle du papier ($-4{,}9$ pt, Table~7), bien que l'échelle diffère d'un facteur $\sim$50.}
@@ -395,7 +418,7 @@ Figure~\ref{fig:loop} schématise cette boucle.
 \begin{figure}[h]
 \centering
 \includegraphics[width=\linewidth]{../figures/fig_adaptive_loop.png}
-\caption{Boucle d'entraînement adaptatif : le pool non étiqueté croît par tranches ; on entraîne,
+\caption[Boucle d'entraînement adaptatif]{Boucle d'entraînement adaptatif : le pool non étiqueté croît par tranches ; on entraîne,
 puis on sonde un $k$-NN sur une validation tenue à l'écart ; l'arrêt se déclenche dès que le gain
 passe sous un seuil. La quantité de données \guillemotleft\ suffisante\,\guillemotright{} devient ainsi empirique plutôt
 qu'arbitraire.}
@@ -411,7 +434,7 @@ d'arrêt opérationnel, pas comme une loi d'échelle pure.
 \begin{figure}[h]
 \centering
 \includegraphics[width=0.62\linewidth]{../figures/fig_adaptive.png}
-\caption{Entraînement adaptatif : précision $k$-NN sonde en fonction du nombre d'images non
+\caption[Saturation des représentations]{Entraînement adaptatif : précision $k$-NN sonde en fonction du nombre d'images non
 étiquetées utilisées ; la bande grisée indique l'incertitude de la sonde, calculée sur seulement
 1\,000 images de validation ($\sim\pm1{,}5$ pt). La précision croît de 23,7\,\% (4\,000
 img.) à 31,6\,\% (24\,000 img.), avec un gain marginal décroissant sur la dernière tranche
@@ -433,8 +456,9 @@ soit $+9{,}8$ points), confirmant que la self-distillation apprend des représen
 EMA --- exactement la conclusion de la Table~7 du papier (retrait du momentum $\to0{,}1\,\%$).
 Surtout, A2 chiffre la contribution du multi-crop à $-5{,}6$ points, très proche des $-4{,}9$ points
 du papier : l'\emph{effet relatif} d'un composant se reproduit fidèlement même quand les valeurs
-absolues, elles, ne sont pas comparables. Enfin, des cartes d'attention sémantiques émergent même
-avec un ViT-Tiny peu entraîné (Figure~\ref{fig:attn}).
+absolues, elles, ne sont pas comparables. Enfin, on observe une attention spatialement structurée
+(concentrée sur l'objet) même avec un ViT-Tiny peu entraîné, indice qualitatif --- quoique bruité
+--- de la propriété émergente (Figure~\ref{fig:attn}).
 
 \paragraph{Ce qui fonctionne mal ou reste incertain.} Contrairement au papier, où le $k$-NN DINO
 rivalise avec les features supervisées, notre DINO (37,2\,\%) reste \emph{en deçà} du supervisé
@@ -473,6 +497,24 @@ A.~Dosovitskiy \emph{et al.}
 \bibitem{oquab2023dinov2}
 M.~Oquab \emph{et al.} \emph{DINOv2: Learning Robust Visual Features without Supervision}.
 arXiv:2304.07193, 2023.
+\bibitem{chen2020simclr}
+T.~Chen, S.~Kornblith, M.~Norouzi, G.~Hinton.
+\emph{A Simple Framework for Contrastive Learning of Visual Representations}. ICML 2020.
+\bibitem{he2020moco}
+K.~He, H.~Fan, Y.~Wu, S.~Xie, R.~Girshick.
+\emph{Momentum Contrast for Unsupervised Visual Representation Learning}. CVPR 2020.
+\bibitem{grill2020byol}
+J.-B.~Grill \emph{et al.}
+\emph{Bootstrap Your Own Latent: A New Approach to Self-Supervised Learning}. NeurIPS 2020.
+\bibitem{he2022mae}
+K.~He, X.~Chen, S.~Xie, Y.~Li, P.~Dollár, R.~Girshick.
+\emph{Masked Autoencoders Are Scalable Vision Learners}. CVPR 2022.
+\bibitem{zbontar2021barlow}
+J.~Zbontar, L.~Jing, I.~Misra, Y.~LeCun, S.~Deny.
+\emph{Barlow Twins: Self-Supervised Learning via Redundancy Reduction}. ICML 2021.
+\bibitem{ho2020ddpm}
+J.~Ho, A.~Jain, P.~Abbeel.
+\emph{Denoising Diffusion Probabilistic Models}. NeurIPS 2020.
 \end{thebibliography}
 
 \end{document}
