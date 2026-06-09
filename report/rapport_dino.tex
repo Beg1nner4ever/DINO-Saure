@@ -102,8 +102,8 @@ en résume l'architecture.
 \centering
 \includegraphics[width=\linewidth]{../figures/fig_architecture.png}
 \caption{Architecture de DINO. Une image produit 2 vues globales ($96\times96$) et 4 vues locales
-($48\times48$). L'enseignant --- moyenne mobile exponentielle (EMA) de l'étudiant, avec
-\emph{stop-grad} --- ne traite que les vues globales ; l'étudiant traite toutes les vues. Chaque
+($48\times48$). L'enseignant --- moyenne mobile (EMA) de l'étudiant, non entraîné par
+rétropropagation --- ne traite que les vues globales ; l'étudiant traite toutes les vues. Chaque
 branche enchaîne un ViT-Tiny puis une tête de projection ($K=2048$) ; la perte est l'entropie
 croisée entre la distribution \emph{enseignant} (centrée puis affûtée) et la distribution
 \emph{étudiant}, sur les paires de vues différentes.}
@@ -121,9 +121,8 @@ rétropropagation : ses poids suivent une moyenne mobile exponentielle de ceux d
 \begin{equation}
   \theta_t \leftarrow \lambda\,\theta_t + (1-\lambda)\,\theta_s,
 \end{equation}
-avec $\lambda$ suivant un planning cosinus de $0{,}996$ vers $1$. L'enseignant joue ainsi le rôle
-d'une cible stable et légèrement \guillemotleft\ en avance\,\guillemotright{}, analogue à un ensemble de modèles (Polyak
-averaging).
+où $\lambda$ augmente progressivement de $0{,}996$ vers $1$ au cours de l'entraînement. L'enseignant
+fournit ainsi une cible plus stable, qui évolue lentement et guide l'apprentissage de l'étudiant.
 
 \paragraph{Perte et anti-effondrement.} Soit $P_t$ et $P_s$ les distributions de l'enseignant et
 de l'étudiant. La perte est une entropie croisée
@@ -159,9 +158,9 @@ produisant des représentations transférables.
 
 \subsection{Ce qui est reproduit fidèlement}
 Le c\oe ur de la méthode : architecture ViT + tête de projection, \emph{multi-crop}, enseignant
-EMA, perte d'entropie croisée inter-vues, centrage + affûtage, planning cosinus du momentum et du
-taux d'apprentissage, règle de mise à l'échelle linéaire du LR ($\text{lr}=0{,}0005\times
-\text{bs}/256$), et l'évaluation $k$-NN à features gelées.
+EMA, perte d'entropie croisée inter-vues, centrage + affûtage, augmentation progressive du momentum
+et du taux d'apprentissage au cours de l'entraînement, et l'évaluation $k$-NN sur représentations
+gelées.
 
 \subsection{Jeu de données et prétraitements}
 \textbf{STL-10} : split \emph{unlabeled} (100\,000 images $96\times96$) pour le
@@ -175,7 +174,7 @@ $48\times48$ avec \texttt{scale}=$[0{,}05,0{,}4]$. L'évaluation utilise un simp
 
 \subsection{Métriques et objets d'analyse}
 \begin{itemize}[nosep]
-  \item \textbf{Précision $k$-NN top-1} ($k=20$, similarité cosinus pondérée par température) sur
+  \item \textbf{Précision $k$-NN top-1} ($k=20$, similarité cosinus) sur
   les features gelées du backbone enseignant : mesure la qualité \guillemotleft\ brute\,\guillemotright{} des représentations,
   sans entraînement supplémentaire.
   \item \textbf{Cartes d'auto-attention} du token \texttt{[CLS]} du dernier bloc ViT : preuve
@@ -205,7 +204,7 @@ Résolution            & 224                   & 96 (global) / 48 (local) \\
 Taille de batch       & 1024                  & 256 \\
 Dim. de sortie $K$    & 65\,536               & 2\,048 \\
 Vues (global+local)   & 2 + 8/10              & 2 + 4 \\
-Évaluation            & lin. probing + $k$-NN & $k$-NN ($k{=}20$) \\
+Évaluation            & classif. linéaire + $k$-NN & $k$-NN ($k{=}20$) \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -223,8 +222,8 @@ pour $\sim$2--3\,h). Deux obstacles concrets nous ont fait migrer l'exécution :
   \item \textbf{Mémoire GPU.} Aux réglages par défaut (batch 256), la passe \emph{multi-crop} ---
   six vues par image (2 globales $96^2$ + 4 locales $48^2$) traversant l'étudiant \emph{et}
   l'enseignant, tête de dimension $K=2048$ --- déclenche une \emph{OutOfMemoryError} sur le T4
-  (16\,Go). On la contourne en divisant le batch par deux ($256\to128$) et en ajustant le LR par la
-  règle de mise à l'échelle linéaire, au prix d'un réglage dégradé.
+  (16\,Go). On la contourne en divisant le batch par deux ($256\to128$) et en réduisant le taux
+  d'apprentissage en proportion, au prix d'un réglage dégradé.
   \item \textbf{Coupures de session.} Le \emph{runtime} gratuit se déconnecte sur inactivité ;
   combiné à un entraînement de plusieurs heures, cela rend peu fiable l'achèvement du pipeline avant
   l'échéance.
@@ -237,8 +236,9 @@ coupure de session ; 36\,Go de mémoire unifiée). Cela a exigé quelques adapta
   $48\times48$ : sans cela le \emph{patch embed} (strict) rejette toute entrée $\neq 96$ et le
   multi-crop ne tourne pas ; les plongements de position sont alors ré-interpolés par taille de vue.
   \item L'opérateur \texttt{\_upsample\_bicubic2d\_aa\_backward} (rétropropagation de cette
-  interpolation) n'est pas implémenté sur MPS et bascule sur CPU (léger surcoût) ; \texttt{pin\_memory}
-  et la précision mixte (AMP) sont également indisponibles, d'où un entraînement en \texttt{float32}.
+  interpolation) n'est pas implémenté sur MPS et bascule sur CPU (léger surcoût) ; certaines
+  optimisations mémoire ne sont pas disponibles non plus, et l'entraînement se fait en simple
+  précision (\texttt{float32}).
 \end{itemize}
 Au final, le \emph{pipeline} complet (pré-entraînement adaptatif + baseline supervisée + ablations
 A1/A2) a tourné sans interruption en $\sim$6\,h sur le GPU intégré, là où l'environnement T4 ---
@@ -405,8 +405,8 @@ d'arrêt opérationnel, pas comme une loi d'échelle pure.
 \centering
 \includegraphics[width=0.62\linewidth]{../figures/fig_adaptive.png}
 \caption{Entraînement adaptatif : précision $k$-NN sonde en fonction du nombre d'images non
-étiquetées utilisées ; la bande grisée indique le bruit d'échantillonnage de la sonde ($\pm1{,}5$ pt
-sur 1\,000 requêtes). La précision croît de 23,7\,\% (4\,000
+étiquetées utilisées ; la bande grisée indique l'incertitude de la sonde, calculée sur seulement
+1\,000 images de validation ($\sim\pm1{,}5$ pt). La précision croît de 23,7\,\% (4\,000
 img.) à 31,6\,\% (24\,000 img.), avec un gain marginal décroissant sur la dernière tranche
 ($31{,}0\to31{,}6$\,\%) signalant la saturation. Arrêt à 24\,000 images / 60 époques, meilleur
 $k$-NN sonde 31,6\,\%.}
@@ -420,7 +420,7 @@ $k$-NN sonde 31,6\,\%.}
 \paragraph{Ce qui fonctionne.} DINO (37,2\,\%) dépasse nettement la borne aléatoire (27,4\,\%,
 soit $+9{,}8$ points), confirmant que la self-distillation apprend des représentations utiles
 \emph{sans aucune étiquette} à échelle réduite. L'ablation A1 produit un effondrement franc
-(19,6\,\%, sous l'aléatoire, perte divergente), validant le rôle \emph{load-bearing} de l'enseignant
+(19,6\,\%, sous l'aléatoire, perte divergente), validant le rôle \emph{essentiel} de l'enseignant
 EMA --- exactement la conclusion de la Table~7 du papier (retrait du momentum $\to0{,}1\,\%$).
 Surtout, A2 chiffre la contribution du multi-crop à $-5{,}6$ points, très proche des $-4{,}9$ points
 du papier : l'\emph{effet relatif} d'un composant se reproduit fidèlement même quand les valeurs
@@ -431,20 +431,21 @@ avec un ViT-Tiny peu entraîné (Figure~\ref{fig:attn}).
 rivalise avec les features supervisées, notre DINO (37,2\,\%) reste \emph{en deçà} du supervisé
 (52,6\,\%). C'est attendu et instructif : (i) 24\,000 images et $\sim$60 époques sont très en deçà
 du régime où le SSL brille (le papier utilise 1,28\,M d'images, 300 époques) ; (ii) $K=2048$ et un
-ViT-Tiny limitent la capacité ; (iii) le $k$-NN à un seul $k$ et une seule graine a une variance
-non mesurée. La courbe adaptative (Figure~\ref{fig:adapt}) étaye cette lecture : la précision sonde
+ViT-Tiny limitent la capacité ; (iii) le $k$-NN, mesuré avec un seul $k$ et une seule graine
+aléatoire, peut varier d'une exécution à l'autre. La courbe adaptative (Figure~\ref{fig:adapt}) étaye cette lecture : la précision sonde
 \emph{croît encore} à 24\,000 images ($23{,}7\to31{,}6$\,\%) sans saturer pleinement --- l'écart au
 supervisé est donc une limite de \emph{données/calcul}, non un défaut de la méthode, et se
 réduirait à plus grande échelle, en cohérence avec le papier.
 
 \paragraph{Différences avec le papier et limites.} Nos chiffres absolus ne sont pas comparables à
 ceux du papier (dataset, résolution, durée, taille de $K$ et de batch tous réduits). Les limites
-principales : (i) \emph{budget de calcul} --- une seule graine, pas d'intervalles de confiance ;
-(ii) \emph{évaluation} --- $k$-NN uniquement, pas de \emph{linear probing} ; (iii) \emph{échelle}
+principales : (i) \emph{budget de calcul} --- une seule exécution, sans moyenne sur plusieurs
+essais ; (ii) \emph{évaluation} --- $k$-NN uniquement, sans entraîner de classifieur linéaire sur
+les représentations gelées ; (iii) \emph{échelle}
 --- le régime de données est trop petit pour que l'avantage du SSL sur le supervisé se manifeste
 pleinement. Des extensions naturelles (hors budget ici) seraient : augmenter le sous-échantillon
-et les époques (\texttt{FAST\_MODE=False}), ajouter le \emph{linear probing}, et moyenner sur
-plusieurs graines.
+et les époques (\texttt{FAST\_MODE=False}), et répéter l'entraînement avec plusieurs graines
+aléatoires pour vérifier la stabilité des résultats.
 
 \paragraph{Conclusion.} Cette reproduction réduite isole et teste l'idée scientifique de DINO ---
 la self-distillation sans étiquettes avec enseignant EMA, centrage et affûtage --- montre comment
