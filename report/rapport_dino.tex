@@ -174,9 +174,12 @@ $48\times48$ avec \texttt{scale}=$[0{,}05,0{,}4]$. L'évaluation utilise un simp
 
 \subsection{Métriques et objets d'analyse}
 \begin{itemize}[nosep]
-  \item \textbf{Précision $k$-NN top-1} ($k=20$, similarité cosinus) sur
-  les features gelées du backbone enseignant : mesure la qualité \guillemotleft\ brute\,\guillemotright{} des représentations,
-  sans entraînement supplémentaire.
+  \item \textbf{Précision $k$-NN top-1} ($k=20$, similarité cosinus) sur les représentations gelées
+  du backbone enseignant. Nous évaluons par $k$-NN plutôt que par un classifieur entraîné car cette
+  méthode \emph{n'apprend rien} : chaque image de test est classée par vote de ses plus proches
+  voisins dans l'espace des représentations. Le score reflète donc directement la qualité des
+  représentations apprises sans supervision --- un classifieur entraîné, lui, pourrait masquer des
+  représentations médiocres en s'y ajustant. C'est aussi le protocole d'évaluation du papier.
   \item \textbf{Cartes d'auto-attention} du token \texttt{[CLS]} du dernier bloc ViT : preuve
   qualitative de l'émergence d'une attention sémantique.
   \item \textbf{Courbe $k$-NN sonde} de l'entraînement adaptatif (diagnostic de convergence et de
@@ -408,7 +411,9 @@ d'arrêt opérationnel, pas comme une loi d'échelle pure.
 étiquetées utilisées ; la bande grisée indique l'incertitude de la sonde, calculée sur seulement
 1\,000 images de validation ($\sim\pm1{,}5$ pt). La précision croît de 23,7\,\% (4\,000
 img.) à 31,6\,\% (24\,000 img.), avec un gain marginal décroissant sur la dernière tranche
-($31{,}0\to31{,}6$\,\%) signalant la saturation. Arrêt à 24\,000 images / 60 époques, meilleur
+($31{,}0\to31{,}6$\,\%, soit $+0{,}6$ pt). Ce dernier gain étant plus petit que l'incertitude de
+mesure sur 1\,000 images, on ne peut pas le considérer comme fiable : la courbe a donc saturé.
+Arrêt à 24\,000 images / 60 époques, meilleur
 $k$-NN sonde 31,6\,\%.}
 \label{fig:adapt}
 \end{figure}
