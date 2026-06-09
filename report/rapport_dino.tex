@@ -95,7 +95,20 @@ DINO entraîne deux réseaux de même architecture, un étudiant $g_{\theta_s}$ 
 $g_{\theta_t}$. Chacun est composé d'un \emph{backbone} (ici un ViT) suivi d'une tête de
 projection produisant un vecteur de dimension $K$, transformé en distribution de probabilité par
 un softmax avec température. L'objectif est de rendre la distribution de l'étudiant cohérente avec
-celle de l'enseignant sur \emph{des vues différentes de la même image}.
+celle de l'enseignant sur \emph{des vues différentes de la même image}. La Figure~\ref{fig:arch}
+en résume l'architecture.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{../figures/fig_architecture.png}
+\caption{Architecture de DINO. Une image produit 2 vues globales ($96\times96$) et 4 vues locales
+($48\times48$). L'enseignant --- moyenne mobile exponentielle (EMA) de l'étudiant, avec
+\emph{stop-grad} --- ne traite que les vues globales ; l'étudiant traite toutes les vues. Chaque
+branche enchaîne un ViT-Tiny puis une tête de projection ($K=2048$) ; la perte est l'entropie
+croisée entre la distribution \emph{enseignant} (centrée puis affûtée) et la distribution
+\emph{étudiant}, sur les paires de vues différentes.}
+\label{fig:arch}
+\end{figure}
 
 \paragraph{Multi-crop.} À partir d'une image, on génère un ensemble de vues : 2 vues
 \emph{globales} (grandes) et plusieurs vues \emph{locales} (petites). L'enseignant ne voit que les
@@ -167,7 +180,8 @@ $48\times48$ avec \texttt{scale}=$[0{,}05,0{,}4]$. L'évaluation utilise un simp
   sans entraînement supplémentaire.
   \item \textbf{Cartes d'auto-attention} du token \texttt{[CLS]} du dernier bloc ViT : preuve
   qualitative de l'émergence d'une attention sémantique.
-  \item \textbf{Courbe de perte} de pré-entraînement (diagnostic de convergence / effondrement).
+  \item \textbf{Courbe $k$-NN sonde} de l'entraînement adaptatif (diagnostic de convergence et de
+  saturation, Figure~\ref{fig:adapt}).
 \end{itemize}
 
 \subsection{Ce qui est simplifié par rapport au papier}
@@ -202,13 +216,39 @@ suffisant pour une attention exploitable (un patch 16 n'en donnerait que 36). ST
 à CIFAR-10/100 pour sa résolution \emph{et} son split non étiqueté dédié au SSL. Le détail des
 arbitrages figure dans \texttt{decisions.md}.
 
+\subsection{Contraintes d'exécution : Colab T4 vs.\ Apple MPS}
+Le notebook visait initialement le GPU \textbf{T4} de Google Colab (\texttt{FAST\_MODE} y est calibré
+pour $\sim$2--3\,h). Deux obstacles concrets nous ont fait migrer l'exécution :
+\begin{itemize}[nosep]
+  \item \textbf{Mémoire GPU.} La passe \emph{multi-crop} --- six vues par image (2 globales $96^2$
+  + 4 locales $48^2$) traversant l'étudiant \emph{et} l'enseignant, avec une tête de dimension
+  $K=2048$ --- sature la mémoire du T4 (16\,Go) et provoque des erreurs \emph{out-of-memory}.
+  \item \textbf{Coupures de session.} Les sessions gratuites Colab s'interrompent (déconnexion sur
+  inactivité, limite de durée), ce qui est incompatible avec un entraînement de plusieurs heures.
+\end{itemize}
+Nous avons donc basculé sur une machine locale \textbf{Apple Silicon (M3)} via le \emph{backend}
+\textbf{MPS} de PyTorch, échangeant du débit brut contre une exécution \emph{ininterrompue} (pas de
+coupure de session ; 36\,Go de mémoire unifiée). Cela a exigé quelques adaptations propres à MPS :
+\begin{itemize}[nosep]
+  \item \texttt{dynamic\_img\_size=True} sur le ViT (timm), pour accepter les vues locales
+  $48\times48$ : sans cela le \emph{patch embed} (strict) rejette toute entrée $\neq 96$ et le
+  multi-crop ne tourne pas ; les plongements de position sont alors ré-interpolés par taille de vue.
+  \item L'opérateur \texttt{\_upsample\_bicubic2d\_aa\_backward} (rétropropagation de cette
+  interpolation) n'est pas implémenté sur MPS et bascule sur CPU (léger surcoût) ; \texttt{pin\_memory}
+  et la précision mixte (AMP) sont également indisponibles, d'où un entraînement en \texttt{float32}.
+\end{itemize}
+Au final, le \emph{pipeline} complet (pré-entraînement adaptatif + baseline supervisée + ablations
+A1/A2) a tourné sans interruption en $\sim$6\,h sur le GPU intégré, là où l'environnement T4 ne
+permettait pas de le mener à terme. Cette dualité résume un arbitrage fréquent en pratique :
+\emph{débit} (CUDA/T4) contre \emph{disponibilité et continuité} (MPS local).
+
 % ======================================================================
 \section{Résultats}
 % ======================================================================
 
 \subsection{Reproduction principale et comparaison aux lignes de base}
-Le Tableau~\ref{tab:main} compare la représentation DINO aux deux lignes de base de \emph{même
-architecture}. La borne basse (initialisation aléatoire) situe le hasard ; la ligne de base
+Le Tableau~\ref{tab:main} (illustré par la Figure~\ref{fig:main}) compare la représentation DINO aux
+deux lignes de base de \emph{même architecture}. La borne basse (initialisation aléatoire) situe le hasard ; la ligne de base
 supervisée fournit la comparaison « équitable » (même backbone, même protocole $k$-NN). On
 attend : $\text{aléatoire} \ll \text{DINO}$, et DINO se rapprochant de --- voire dépassant en
 $k$-NN --- la version supervisée entraînée sur seulement 5\,000 images étiquetées, illustrant
@@ -231,6 +271,15 @@ Supervisé (5\,000 images étiquetées)          & 52,6 \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.6\linewidth]{../figures/fig_main_results.png}
+\caption{Représentations gelées : précision $k$-NN sur STL-10 (mêmes chiffres que le
+Tableau~\ref{tab:main}). DINO ($37{,}2$\,\%) dépasse largement la borne aléatoire ($27{,}4$\,\%) mais
+reste sous la baseline supervisée de même architecture ($52{,}6$\,\%).}
+\label{fig:main}
+\end{figure}
 
 \noindent\emph{Remarque.} Nous avons retenu le protocole \textbf{adaptatif} (§5b du notebook) plutôt
 que le pré-entraînement à durée fixe (§5) ; \texttt{figures/loss\_curve.png} n'est donc pas produit.
@@ -257,9 +306,10 @@ se focalisent sur des régions distinctes de l'objet, \emph{sans aucune supervis
 \section{Ablation et extension}
 % ======================================================================
 
-Nous reproduisons trois expériences inspirées de la Table~7 du papier, adaptées à notre cadre
-réduit (20 époques chacune). Chaque ablation ré-initialise un modèle et ne modifie \emph{qu'un}
-composant. Le Tableau~\ref{tab:abl} regroupe les résultats.
+Nous menons deux ablations exécutées inspirées de la Table~7 du papier (plus une troisième, décrite
+mais non exécutée), adaptées à notre cadre réduit (20 époques chacune). Chaque ablation ré-initialise
+un modèle et ne modifie \emph{qu'un} composant. Le Tableau~\ref{tab:abl} et la Figure~\ref{fig:abl_fig}
+regroupent les résultats.
 
 \paragraph{A1 --- Sans encodeur à momentum.} \emph{Changement} : l'enseignant devient une copie
 directe de l'étudiant à chaque pas (au lieu de l'EMA). \emph{Hypothèse} : la cible n'est plus
@@ -308,6 +358,17 @@ A3  & Balayage $\tau_t$ (0,04 / 0,07 / 0,10) & \emph{non réalisé} \\
 \end{tabular}
 \end{table}
 
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.56\linewidth]{../figures/fig_ablations.png}\hfill
+\includegraphics[width=0.40\linewidth]{../figures/fig_multicrop_match.png}
+\caption{\textbf{Gauche} : ablations en cadre réduit. Retirer le momentum (A1) effondre la
+représentation \emph{sous} la borne aléatoire ; retirer le multi-crop (A2) coûte $-5{,}6$ points.
+\textbf{Droite} : la contribution du multi-crop que nous mesurons ($-5{,}6$ pt) coïncide presque
+avec celle du papier ($-4{,}9$ pt, Table~7), bien que l'échelle diffère d'un facteur $\sim$50.}
+\label{fig:abl_fig}
+\end{figure}
+
 \subsection{Extension personnelle : entraînement adaptatif piloté par la métrique aval}
 Plutôt que de fixer \emph{a priori} la taille du jeu non étiqueté --- un choix arbitraire qui
 influe fortement sur le résultat --- nous proposons un protocole d'entraînement \textbf{adaptatif}.
@@ -317,7 +378,18 @@ tranche, on entraîne quelques époques puis on évalue un \emph{k-NN sonde} rap
 automatiquement} lorsque le gain de précision sonde passe sous un seuil (\texttt{min\_delta})
 pendant \texttt{patience} phases consécutives, ou atteint une cible. Le critère « combien de
 données suffisent ? » devient ainsi \emph{empirique} : on lit directement sur la courbe
-(Figure~\ref{fig:adapt}) le point de saturation, et le meilleur modèle rencontré est conservé.
+(Figure~\ref{fig:adapt}) le point de saturation, et le meilleur modèle rencontré est conservé. La
+Figure~\ref{fig:loop} schématise cette boucle.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{../figures/fig_adaptive_loop.png}
+\caption{Boucle d'entraînement adaptatif : le pool non étiqueté croît par tranches ; on entraîne,
+puis on sonde un $k$-NN sur une validation tenue à l'écart ; l'arrêt se déclenche dès que le gain
+passe sous un seuil. La quantité de données « suffisante » devient ainsi empirique plutôt
+qu'arbitraire.}
+\label{fig:loop}
+\end{figure}
 
 \emph{Motivation et hypothèse} : le SSL devrait bénéficier de plus de données jusqu'à un plateau ;
 identifier ce plateau évite de gaspiller du calcul et justifie la taille retenue. \emph{Limite}
@@ -327,9 +399,10 @@ d'arrêt opérationnel, pas comme une loi d'échelle pure.
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.6\linewidth]{../figures/adaptive_curve.png}
+\includegraphics[width=0.62\linewidth]{../figures/fig_adaptive.png}
 \caption{Entraînement adaptatif : précision $k$-NN sonde en fonction du nombre d'images non
-étiquetées utilisées (\texttt{figures/adaptive\_curve.png}). La précision croît de 23,7\,\% (4\,000
+étiquetées utilisées ; la bande grisée indique le bruit d'échantillonnage de la sonde ($\pm1{,}5$ pt
+sur 1\,000 requêtes). La précision croît de 23,7\,\% (4\,000
 img.) à 31,6\,\% (24\,000 img.), avec un gain marginal décroissant sur la dernière tranche
 ($31{,}0\to31{,}6$\,\%) signalant la saturation. Arrêt à 24\,000 images / 60 époques, meilleur
 $k$-NN sonde 31,6\,\%.}
