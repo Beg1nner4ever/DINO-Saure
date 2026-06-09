@@ -1,0 +1,6 @@
+{
+  "dino_knn": 37.175,
+  "random_knn": 27.375,
+  "supervised_knn": 52.6125,
+  "supervised_test_cls": 49.7875
+}

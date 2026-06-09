@@ -1,0 +1,32 @@
+[
+  {
+    "images": 4000,
+    "epoch": 10,
+    "probe_knn": 23.7
+  },
+  {
+    "images": 8000,
+    "epoch": 20,
+    "probe_knn": 24.4
+  },
+  {
+    "images": 12000,
+    "epoch": 30,
+    "probe_knn": 28.3
+  },
+  {
+    "images": 16000,
+    "epoch": 40,
+    "probe_knn": 29.7
+  },
+  {
+    "images": 20000,
+    "epoch": 50,
+    "probe_knn": 31.0
+  },
+  {
+    "images": 24000,
+    "epoch": 60,
+    "probe_knn": 31.6
+  }
+]

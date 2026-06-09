@@ -1,5 +1,7 @@
 data/
 checkpoints/*.pt
+logs/
+.venv/
 __pycache__/
 .ipynb_checkpoints/
 *.pyc
