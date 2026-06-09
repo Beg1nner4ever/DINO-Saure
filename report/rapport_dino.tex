@@ -114,7 +114,7 @@ croisée entre la distribution \emph{enseignant} (centrée puis affûtée) et la
 \emph{globales} (grandes) et plusieurs vues \emph{locales} (petites). L'enseignant ne voit que les
 vues globales ; l'étudiant voit \emph{toutes} les vues. La perte n'est calculée que sur les paires
 de vues \emph{différentes}, ce qui pousse l'étudiant à inférer le contexte global à partir d'un
-détail local (« local-to-global »).
+détail local (\guillemotleft\ local-to-global\,\guillemotright{}).
 
 \paragraph{Enseignant à momentum (EMA).} L'enseignant n'est jamais entraîné par
 rétropropagation : ses poids suivent une moyenne mobile exponentielle de ceux de l'étudiant,
@@ -122,7 +122,7 @@ rétropropagation : ses poids suivent une moyenne mobile exponentielle de ceux d
   \theta_t \leftarrow \lambda\,\theta_t + (1-\lambda)\,\theta_s,
 \end{equation}
 avec $\lambda$ suivant un planning cosinus de $0{,}996$ vers $1$. L'enseignant joue ainsi le rôle
-d'une cible stable et légèrement « en avance », analogue à un ensemble de modèles (Polyak
+d'une cible stable et légèrement \guillemotleft\ en avance\,\guillemotright{}, analogue à un ensemble de modèles (Polyak
 averaging).
 
 \paragraph{Perte et anti-effondrement.} Soit $P_t$ et $P_s$ les distributions de l'enseignant et
@@ -176,7 +176,7 @@ $48\times48$ avec \texttt{scale}=$[0{,}05,0{,}4]$. L'évaluation utilise un simp
 \subsection{Métriques et objets d'analyse}
 \begin{itemize}[nosep]
   \item \textbf{Précision $k$-NN top-1} ($k=20$, similarité cosinus pondérée par température) sur
-  les features gelées du backbone enseignant : mesure la qualité « brute » des représentations,
+  les features gelées du backbone enseignant : mesure la qualité \guillemotleft\ brute\,\guillemotright{} des représentations,
   sans entraînement supplémentaire.
   \item \textbf{Cartes d'auto-attention} du token \texttt{[CLS]} du dernier bloc ViT : preuve
   qualitative de l'émergence d'une attention sémantique.
@@ -220,11 +220,14 @@ arbitrages figure dans \texttt{decisions.md}.
 Le notebook visait initialement le GPU \textbf{T4} de Google Colab (\texttt{FAST\_MODE} y est calibré
 pour $\sim$2--3\,h). Deux obstacles concrets nous ont fait migrer l'exécution :
 \begin{itemize}[nosep]
-  \item \textbf{Mémoire GPU.} La passe \emph{multi-crop} --- six vues par image (2 globales $96^2$
-  + 4 locales $48^2$) traversant l'étudiant \emph{et} l'enseignant, avec une tête de dimension
-  $K=2048$ --- sature la mémoire du T4 (16\,Go) et provoque des erreurs \emph{out-of-memory}.
-  \item \textbf{Coupures de session.} Les sessions gratuites Colab s'interrompent (déconnexion sur
-  inactivité, limite de durée), ce qui est incompatible avec un entraînement de plusieurs heures.
+  \item \textbf{Mémoire GPU.} Aux réglages par défaut (batch 256), la passe \emph{multi-crop} ---
+  six vues par image (2 globales $96^2$ + 4 locales $48^2$) traversant l'étudiant \emph{et}
+  l'enseignant, tête de dimension $K=2048$ --- déclenche une \emph{OutOfMemoryError} sur le T4
+  (16\,Go). On la contourne en divisant le batch par deux ($256\to128$) et en ajustant le LR par la
+  règle de mise à l'échelle linéaire, au prix d'un réglage dégradé.
+  \item \textbf{Coupures de session.} Le \emph{runtime} gratuit se déconnecte sur inactivité ;
+  combiné à un entraînement de plusieurs heures, cela rend peu fiable l'achèvement du pipeline avant
+  l'échéance.
 \end{itemize}
 Nous avons donc basculé sur une machine locale \textbf{Apple Silicon (M3)} via le \emph{backend}
 \textbf{MPS} de PyTorch, échangeant du débit brut contre une exécution \emph{ininterrompue} (pas de
@@ -238,8 +241,9 @@ coupure de session ; 36\,Go de mémoire unifiée). Cela a exigé quelques adapta
   et la précision mixte (AMP) sont également indisponibles, d'où un entraînement en \texttt{float32}.
 \end{itemize}
 Au final, le \emph{pipeline} complet (pré-entraînement adaptatif + baseline supervisée + ablations
-A1/A2) a tourné sans interruption en $\sim$6\,h sur le GPU intégré, là où l'environnement T4 ne
-permettait pas de le mener à terme. Cette dualité résume un arbitrage fréquent en pratique :
+A1/A2) a tourné sans interruption en $\sim$6\,h sur le GPU intégré, là où l'environnement T4 ---
+même après réduction du batch --- restait sujet aux déconnexions et ne garantissait pas l'achèvement
+avant l'échéance. Cette dualité résume un arbitrage fréquent en pratique :
 \emph{débit} (CUDA/T4) contre \emph{disponibilité et continuité} (MPS local).
 
 % ======================================================================
@@ -249,7 +253,7 @@ permettait pas de le mener à terme. Cette dualité résume un arbitrage fréque
 \subsection{Reproduction principale et comparaison aux lignes de base}
 Le Tableau~\ref{tab:main} (illustré par la Figure~\ref{fig:main}) compare la représentation DINO aux
 deux lignes de base de \emph{même architecture}. La borne basse (initialisation aléatoire) situe le hasard ; la ligne de base
-supervisée fournit la comparaison « équitable » (même backbone, même protocole $k$-NN). On
+supervisée fournit la comparaison \guillemotleft\ équitable\,\guillemotright{} (même backbone, même protocole $k$-NN). On
 attend : $\text{aléatoire} \ll \text{DINO}$, et DINO se rapprochant de --- voire dépassant en
 $k$-NN --- la version supervisée entraînée sur seulement 5\,000 images étiquetées, illustrant
 l'intérêt d'exploiter 20\,000 images \emph{non} étiquetées.
@@ -281,8 +285,8 @@ reste sous la baseline supervisée de même architecture ($52{,}6$\,\%).}
 \label{fig:main}
 \end{figure}
 
-\noindent\emph{Remarque.} Nous avons retenu le protocole \textbf{adaptatif} (§5b du notebook) plutôt
-que le pré-entraînement à durée fixe (§5) ; \texttt{figures/loss\_curve.png} n'est donc pas produit.
+\noindent\emph{Remarque.} Nous avons retenu le protocole \textbf{adaptatif} (\S5b du notebook) plutôt
+que le pré-entraînement à durée fixe (\S5) ; \texttt{figures/loss\_curve.png} n'est donc pas produit.
 Le diagnostic de convergence (absence d'effondrement) est fourni par la courbe d'entraînement
 adaptatif (Figure~\ref{fig:adapt}), dont la précision $k$-NN sonde croît de façon monotone.
 
@@ -323,7 +327,7 @@ l'effondrement se lit comme un modèle \emph{pire} que l'aléatoire --- l'entra�
 détruit la structure pourtant présente à l'initialisation.
 
 \paragraph{A2 --- Sans multi-crop.} \emph{Changement} : on retire les vues locales (2 vues
-globales seulement). \emph{Hypothèse} : perte de l'objectif « local-to-global », baisse modérée
+globales seulement). \emph{Hypothèse} : perte de l'objectif \guillemotleft\ local-to-global\,\guillemotright{}, baisse modérée
 de $\sim$3--5 points. \emph{Résultat} : \textbf{31,6\,\%}, soit $-5{,}6$ points par rapport à DINO
 complet (37,2\,\%). Le papier mesure $-4{,}9$ points ($72{,}8\to67{,}9$, Table~7) : nos deux
 estimations de la contribution du multi-crop concordent étroitement \emph{malgré} une échelle
@@ -376,8 +380,8 @@ Le pool d'images non étiquetées croît par tranches de \texttt{CHUNK} (4\,000)
 tranche, on entraîne quelques époques puis on évalue un \emph{k-NN sonde} rapide sur un petit
 échantillon tenu à l'écart (1\,000 réf./1\,000 requêtes). L'entraînement s'\textbf{arrête
 automatiquement} lorsque le gain de précision sonde passe sous un seuil (\texttt{min\_delta})
-pendant \texttt{patience} phases consécutives, ou atteint une cible. Le critère « combien de
-données suffisent ? » devient ainsi \emph{empirique} : on lit directement sur la courbe
+pendant \texttt{patience} phases consécutives, ou atteint une cible. Le critère \guillemotleft\ combien de
+données suffisent ?\,\guillemotright{} devient ainsi \emph{empirique} : on lit directement sur la courbe
 (Figure~\ref{fig:adapt}) le point de saturation, et le meilleur modèle rencontré est conservé. La
 Figure~\ref{fig:loop} schématise cette boucle.
 
@@ -386,7 +390,7 @@ Figure~\ref{fig:loop} schématise cette boucle.
 \includegraphics[width=\linewidth]{../figures/fig_adaptive_loop.png}
 \caption{Boucle d'entraînement adaptatif : le pool non étiqueté croît par tranches ; on entraîne,
 puis on sonde un $k$-NN sur une validation tenue à l'écart ; l'arrêt se déclenche dès que le gain
-passe sous un seuil. La quantité de données « suffisante » devient ainsi empirique plutôt
+passe sous un seuil. La quantité de données \guillemotleft\ suffisante\,\guillemotright{} devient ainsi empirique plutôt
 qu'arbitraire.}
 \label{fig:loop}
 \end{figure}
