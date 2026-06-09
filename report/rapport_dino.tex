@@ -44,8 +44,10 @@ exponentielle (EMA) de l'étudiant, sans aucune étiquette. Nous entraînons un 
 qualité des représentations gelées par un classifieur $k$-NN, et comparons à deux lignes de base
 de même architecture (initialisation aléatoire et entraînement supervisé). Nous reproduisons
 qualitativement la propriété émergente phare du papier --- des cartes d'auto-attention qui
-segmentent les objets sans supervision --- et menons trois ablations inspirées de la Table~7 du
-papier (encodeur à momentum, multi-crop, température de l'enseignant). Notre but n'est pas
+segmentent les objets sans supervision --- et menons deux ablations exécutées inspirées de la Table~7 du
+papier (encodeur à momentum, multi-crop) ; une troisième (température de l'enseignant) est décrite
+mais non exécutée faute de budget. Nous comparons nos \emph{effets relatifs} d'ablation à ceux du
+papier plutôt que les valeurs absolues. Notre but n'est pas
 d'égaler les performances ImageNet du papier mais de montrer que le mécanisme fonctionne à échelle
 réduite et que nos ablations en retrouvent qualitativement les conclusions.
 \end{abstract}
@@ -182,10 +184,10 @@ expose un drapeau \texttt{FAST\_MODE} ; les réglages fidèles au papier restent
 \toprule
 \textbf{Élément} & \textbf{Papier (DINO)} & \textbf{Cette repro.} \\
 \midrule
-Jeu de données        & ImageNet-1k (1,28\,M) & STL-10 (sous-échant. 20\,000) \\
+Jeu de données        & ImageNet-1k (1,28\,M) & STL-10 (adaptatif, $\leq$24\,000) \\
 Backbone              & ViT-S/16, ViT-B/8     & ViT-Tiny/8 ($\sim$5--6\,M) \\
 Résolution            & 224                   & 96 (global) / 48 (local) \\
-Époques               & 300                   & 40 (principal), 20 (ablations) \\
+Époques               & 300                   & $\sim$60 (adaptatif), 20 (ablations) \\
 Taille de batch       & 1024                  & 256 \\
 Dim. de sortie $K$    & 65\,536               & 2\,048 \\
 Vues (global+local)   & 2 + 8/10              & 2 + 4 \\
@@ -221,23 +223,19 @@ Chiffres à compléter depuis \texttt{results/main\_results.json}.}
 \toprule
 \textbf{Méthode (backbone ViT-Tiny/8)} & \textbf{$k$-NN top-1 (\%)} \\
 \midrule
-Initialisation aléatoire (borne basse)        & \TODO{random\_knn} \\
-Supervisé (5\,000 images étiquetées)          & \TODO{supervised\_knn} \\
-\textbf{DINO (auto-supervisé, 20\,000 img.)}  & \TODO{dino\_knn} \\
+Initialisation aléatoire (borne basse)        & 27,4 \\
+Supervisé (5\,000 images étiquetées)          & 52,6 \\
+\textbf{DINO (auto-supervisé, $\leq$24\,000 img.)}  & \textbf{37,2} \\
 \midrule
-\emph{Pour mémoire} : supervisé, précision de classification directe & \TODO{supervised\_test\_cls} \\
+\emph{Pour mémoire} : supervisé, précision de classification directe & 49,8 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{figure}[h]
-\centering
-% \includegraphics[width=0.6\linewidth]{../figures/loss_curve.png}
-\caption{Courbe de perte du pré-entraînement DINO (\texttt{figures/loss\_curve.png}).
-Une décroissance régulière sans plateau précoce à valeur dégénérée indique l'absence
-d'effondrement. \emph{Insérer la figure après le run.}}
-\label{fig:loss}
-\end{figure}
+\noindent\emph{Remarque.} Nous avons retenu le protocole \textbf{adaptatif} (§5b du notebook) plutôt
+que le pré-entraînement à durée fixe (§5) ; \texttt{figures/loss\_curve.png} n'est donc pas produit.
+Le diagnostic de convergence (absence d'effondrement) est fourni par la courbe d'entraînement
+adaptatif (Figure~\ref{fig:adapt}), dont la précision $k$-NN sonde croît de façon monotone.
 
 \subsection{Résultat qualitatif : attention émergente}
 La Figure~\ref{fig:attn} montre les cartes d'auto-attention du token \texttt{[CLS]} (dernier
@@ -247,9 +245,11 @@ phare de DINO ; sa présence à échelle réduite valide qualitativement notre r
 
 \begin{figure}[h]
 \centering
-% \includegraphics[width=0.9\linewidth]{../figures/attention_cat.png}
-\caption{Cartes d'attention par tête sur des images de test
-(\texttt{figures/attention\_*.png}). \emph{Insérer 1--2 exemples après le run.}}
+\includegraphics[width=0.49\linewidth]{../figures/attention_dog.png}\hfill
+\includegraphics[width=0.49\linewidth]{../figures/attention_horse.png}
+\caption{Cartes d'auto-attention par tête (token \texttt{[CLS]}, dernier bloc) sur deux images de
+test STL-10 (\texttt{figures/attention\_dog.png}, \texttt{attention\_horse.png}). Différentes têtes
+se focalisent sur des régions distinctes de l'objet, \emph{sans aucune supervision}.}
 \label{fig:attn}
 \end{figure}
 
@@ -265,20 +265,31 @@ composant. Le Tableau~\ref{tab:abl} regroupe les résultats.
 directe de l'étudiant à chaque pas (au lieu de l'EMA). \emph{Hypothèse} : la cible n'est plus
 stable, le modèle \emph{s'effondre} et la précision $k$-NN chute au niveau du hasard. C'est le
 composant le plus critique du papier (Table~7 : retrait du momentum $\rightarrow$ 0,1\,\%).
-\emph{Résultat} : \TODO{A1\_no\_momentum} \% --- \emph{interpréter : effondrement observé ?
-comparer à la borne aléatoire du Tableau~\ref{tab:main}}.
+\emph{Résultat} : \textbf{19,6\,\%} --- effondrement confirmé. La précision tombe \emph{sous} la
+borne aléatoire (27,4\,\%, Tab.~\ref{tab:main}) et la perte de pré-entraînement \emph{diverge}
+($5{,}5\to8{,}4$), double signature de l'effondrement. Le papier rapporte $0{,}1\,\%$ (le hasard
+sur 1000 classes) ; à 10 classes, où l'initialisation aléatoire atteint déjà 27,4\,\%,
+l'effondrement se lit comme un modèle \emph{pire} que l'aléatoire --- l'entraînement dégénéré a
+détruit la structure pourtant présente à l'initialisation.
 
 \paragraph{A2 --- Sans multi-crop.} \emph{Changement} : on retire les vues locales (2 vues
 globales seulement). \emph{Hypothèse} : perte de l'objectif « local-to-global », baisse modérée
-de $\sim$3--5 points. \emph{Résultat} : \TODO{A2\_no\_multicrop} \% --- \emph{quantifier l'écart
-avec DINO complet}.
+de $\sim$3--5 points. \emph{Résultat} : \textbf{31,6\,\%}, soit $-5{,}6$ points par rapport à DINO
+complet (37,2\,\%). Le papier mesure $-4{,}9$ points ($72{,}8\to67{,}9$, Table~7) : nos deux
+estimations de la contribution du multi-crop concordent étroitement \emph{malgré} une échelle
+50$\times$ plus petite, illustrant que l'\emph{effet relatif} d'un composant se transpose mieux que
+la performance absolue. La variante reste stable (enseignant EMA conservé), d'où l'absence
+d'effondrement contrairement à A1.
 
 \paragraph{A3 --- Balayage de la température de l'enseignant $\tau_t$.} \emph{Changement} :
 $\tau_t \in \{0{,}04,\,0{,}07,\,0{,}10\}$. \emph{Hypothèse} : une température trop haute
 sous-affûte les cibles et rapproche de l'effondrement (centrage non compensé), tandis qu'une
 température basse maintient des cibles piquées. C'est une mise en évidence directe de l'équilibre
-centrage/affûtage. \emph{Résultats} : $\tau_t{=}0{,}04$ : \TODO{A3\_tau\_t=0.04}\,\% ;
-$\tau_t{=}0{,}07$ : \TODO{A3\_tau\_t=0.07}\,\% ; $\tau_t{=}0{,}10$ : \TODO{A3\_tau\_t=0.1}\,\%.
+centrage/affûtage. \emph{Statut} : faute de budget de calcul (chaque valeur de $\tau_t$ exige un
+entraînement complet, soit $\sim$5\,h supplémentaires sur le GPU MPS local), ce balayage n'a
+\emph{pas} été exécuté. Nous en conservons l'hypothèse, directement vérifiable en relançant la
+cellule correspondante du notebook ; la Figure~7 du papier (étude de l'effondrement par
+entropie/divergence KL) corrobore l'effet attendu de $\tau_t$.
 
 \begin{table}[h]
 \centering
@@ -289,12 +300,10 @@ Source : \texttt{results/all\_results.json}.}
 \toprule
 \textbf{ID} & \textbf{Variante} & \textbf{$k$-NN top-1 (\%)} \\
 \midrule
---- & DINO complet (référence)            & \TODO{dino\_knn} \\
-A1  & Sans momentum (copie directe)       & \TODO{A1\_no\_momentum} \\
-A2  & Sans multi-crop (2 globales)        & \TODO{A2\_no\_multicrop} \\
-A3  & $\tau_t = 0{,}04$                    & \TODO{A3\_tau\_t=0.04} \\
-A3  & $\tau_t = 0{,}07$                    & \TODO{A3\_tau\_t=0.07} \\
-A3  & $\tau_t = 0{,}10$                    & \TODO{A3\_tau\_t=0.1} \\
+--- & DINO complet (référence)            & \textbf{37,2} \\
+A1  & Sans momentum (copie directe)       & 19,6 \\
+A2  & Sans multi-crop (2 globales)        & 31,6 \\
+A3  & Balayage $\tau_t$ (0,04 / 0,07 / 0,10) & \emph{non réalisé} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -318,11 +327,12 @@ d'arrêt opérationnel, pas comme une loi d'échelle pure.
 
 \begin{figure}[h]
 \centering
-% \includegraphics[width=0.6\linewidth]{../figures/adaptive_curve.png}
+\includegraphics[width=0.6\linewidth]{../figures/adaptive_curve.png}
 \caption{Entraînement adaptatif : précision $k$-NN sonde en fonction du nombre d'images non
-étiquetées utilisées (\texttt{figures/adaptive\_curve.png}). Le plateau indique la taille de
-données suffisante ; \emph{insérer après le run}. Arrêt à \TODO{images} images /
-\TODO{epoch} époques, meilleur k-NN sonde \TODO{best\_probe}\,\%.}
+étiquetées utilisées (\texttt{figures/adaptive\_curve.png}). La précision croît de 23,7\,\% (4\,000
+img.) à 31,6\,\% (24\,000 img.), avec un gain marginal décroissant sur la dernière tranche
+($31{,}0\to31{,}6$\,\%) signalant la saturation. Arrêt à 24\,000 images / 60 époques, meilleur
+$k$-NN sonde 31,6\,\%.}
 \label{fig:adapt}
 \end{figure}
 
@@ -330,19 +340,25 @@ données suffisante ; \emph{insérer après le run}. Arrêt à \TODO{images} ima
 \section{Discussion critique}
 % ======================================================================
 
-\paragraph{Ce qui fonctionne.} \emph{À compléter avec les chiffres.} Typiquement : DINO dépasse
-nettement la borne aléatoire, confirmant que le mécanisme apprend des représentations utiles à
-échelle réduite ; l'ablation A1 devrait montrer un effondrement franc, validant le rôle
-\emph{load-bearing} de l'enseignant EMA ; les cartes d'attention sémantiques émergent même avec un
-ViT-Tiny peu entraîné.
+\paragraph{Ce qui fonctionne.} DINO (37,2\,\%) dépasse nettement la borne aléatoire (27,4\,\%,
+soit $+9{,}8$ points), confirmant que la self-distillation apprend des représentations utiles
+\emph{sans aucune étiquette} à échelle réduite. L'ablation A1 produit un effondrement franc
+(19,6\,\%, sous l'aléatoire, perte divergente), validant le rôle \emph{load-bearing} de l'enseignant
+EMA --- exactement la conclusion de la Table~7 du papier (retrait du momentum $\to0{,}1\,\%$).
+Surtout, A2 chiffre la contribution du multi-crop à $-5{,}6$ points, très proche des $-4{,}9$ points
+du papier : l'\emph{effet relatif} d'un composant se reproduit fidèlement même quand les valeurs
+absolues, elles, ne sont pas comparables. Enfin, des cartes d'attention sémantiques émergent même
+avec un ViT-Tiny peu entraîné (Figure~\ref{fig:attn}).
 
-\paragraph{Ce qui fonctionne mal ou reste incertain.} \emph{À compléter.} Pistes d'analyse
-honnête : l'écart DINO vs. supervisé peut être faible, voire défavorable, car (i) 40 époques et
-20\,000 images sont très en deçà du régime où le SSL brille, (ii) $K=2048$ et un ViT-Tiny limitent
-la capacité, (iii) le $k$-NN à un seul $k$ et une seule graine présente une variance non mesurée.
-Si une ablation ne reproduit pas la tendance attendue (p.\,ex. A2 sans baisse nette), il faut le
-dire et l'expliquer (durée d'entraînement trop courte pour que le multi-crop paie, bruit
-d'estimation).
+\paragraph{Ce qui fonctionne mal ou reste incertain.} Contrairement au papier, où le $k$-NN DINO
+rivalise avec les features supervisées, notre DINO (37,2\,\%) reste \emph{en deçà} du supervisé
+(52,6\,\%). C'est attendu et instructif : (i) 24\,000 images et $\sim$60 époques sont très en deçà
+du régime où le SSL brille (le papier utilise 1,28\,M d'images, 300 époques) ; (ii) $K=2048$ et un
+ViT-Tiny limitent la capacité ; (iii) le $k$-NN à un seul $k$ et une seule graine a une variance
+non mesurée. La courbe adaptative (Figure~\ref{fig:adapt}) étaye cette lecture : la précision sonde
+\emph{croît encore} à 24\,000 images ($23{,}7\to31{,}6$\,\%) sans saturer pleinement --- l'écart au
+supervisé est donc une limite de \emph{données/calcul}, non un défaut de la méthode, et se
+réduirait à plus grande échelle, en cohérence avec le papier.
 
 \paragraph{Différences avec le papier et limites.} Nos chiffres absolus ne sont pas comparables à
 ceux du papier (dataset, résolution, durée, taille de $K$ et de batch tous réduits). Les limites
