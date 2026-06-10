@@ -14,7 +14,9 @@
   },
   "ablations": {
     "A1_no_momentum": 19.59,
-    "A2_no_multicrop": 31.57
-  },
-  "_note": "A3 temperature sweep intentionally skipped to save compute (~5h). A1/A2 complete."
+    "A2_no_multicrop": 31.57,
+    "A3_tau_t=0.04": 32.3625,
+    "A3_tau_t=0.07": 31.5375,
+    "A3_tau_t=0.1": 30.9375
+  }
 }
