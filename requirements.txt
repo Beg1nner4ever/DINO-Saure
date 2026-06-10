@@ -1,7 +1,11 @@
+# Tested with (Python 3.12, Apple MPS):
+#   torch 2.12.0  torchvision 0.27.0  timm 1.0.27
+#   numpy 2.4.6   matplotlib 3.10.9   Pillow 12.2.0
+# Lower bounds kept loose for Google Colab compatibility (Colab ships a recent torch).
+# Note: the ViT uses timm's dynamic_img_size (for the 48x48 multi-crop views) -> needs a recent timm.
 torch>=2.0
 torchvision>=0.15
 timm>=0.9
-einops
-numpy
-matplotlib
-Pillow
+numpy>=1.24
+matplotlib>=3.6
+Pillow>=9.0
