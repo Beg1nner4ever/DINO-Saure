@@ -47,22 +47,22 @@
 
 \begin{abstract}
 \noindent
-Nous reproduisons, dans un cadre volontairement réduit mais rigoureux, l'idée centrale de
-\textbf{DINO}~\cite{caron2021dino} : l'apprentissage auto-supervisé de représentations visuelles
-par \emph{self-distillation} avec un réseau enseignant construit comme moyenne mobile
-exponentielle (EMA) de l'étudiant, sans aucune étiquette. Nous entraînons un Vision Transformer
-\emph{ViT-Tiny} (patch 8 ; \emph{backbone} $\sim$5,5\,M paramètres, $\sim$11\,M avec la tête de
-projection) sur le jeu de données STL-10, évaluons la
-qualité des représentations gelées par un classifieur $k$-NN, et comparons à deux lignes de base
-de même architecture (initialisation aléatoire et entraînement supervisé). Nous retrouvons
-partiellement la propriété émergente phare du papier --- des cartes d'auto-attention qui se
-structurent autour des objets sans supervision (quoique bruitées à notre échelle) --- et menons trois ablations inspirées de la Table~7 du
-papier (encodeur à momentum, multi-crop, température de l'enseignant). Comparées \emph{à durée égale}
-aux résultats du papier, l'effondrement par retrait du momentum se reproduit nettement, tandis que
-les effets du multi-crop et de la température, présents et de bon signe, restent atténués par notre
-budget réduit. Notre but n'est pas
-d'égaler les performances ImageNet du papier mais de montrer que le mécanisme fonctionne à échelle
-réduite et que nos ablations en retrouvent qualitativement les conclusions.
+Dans ce projet, on cherche à reproduire l'idée centrale de
+\textbf{DINO}~\cite{caron2021dino} : apprendre des représentations visuelles sans aucune étiquette,
+en faisant correspondre les sorties d'un réseau étudiant à celles d'un réseau enseignant construit
+comme moyenne mobile exponentielle (EMA) de l'étudiant. On entraîne un
+\emph{ViT-Tiny} (patch 8, environ 5,5\,M paramètres pour le backbone, 11\,M avec la tête de
+projection) sur STL-10, et on évalue la qualité des représentations obtenues avec un classifieur
+$k$-NN, qu'on compare à deux références de même architecture : une initialisation aléatoire et
+un entraînement supervisé classique. On retrouve en partie la propriété émergente mise en avant
+dans le papier, à savoir des cartes d'auto-attention qui se structurent autour des objets sans
+aucune supervision, même si elles restent bruitées à notre échelle. On mène aussi trois ablations
+tirées de la Table~7 du papier, sur l'encodeur à momentum, le multi-crop et la température de
+l'enseignant. En comparant à durée égale avec les résultats du papier, l'effondrement provoqué
+par le retrait du momentum se reproduit clairement, tandis que les effets du multi-crop et de la
+température, présents et dans le bon sens, restent atténués par notre budget réduit. L'objectif
+n'est pas d'égaler les performances sur ImageNet mais de vérifier que le mécanisme fonctionne
+à petite échelle et que nos ablations retrouvent qualitativement les mêmes conclusions.
 \end{abstract}
 
 \begin{center}
@@ -87,26 +87,27 @@ auto-supervisé (SSL) qui apprend des représentations visuelles sans étiquette
 correspondre les sorties d'un réseau \emph{étudiant} à celles d'un réseau \emph{enseignant}
 construit à partir de l'étudiant lui-même.
 
-\paragraph{Pourquoi ce papier.} Trois raisons ont motivé ce choix. (i) \emph{Pertinence} : le
-pré-entraînement auto-supervisé répond directement au coût d'annotation, goulot d'étranglement
-des pipelines réels ; DINOv2 (Meta, 2023) en est le descendant direct et largement utilisé en
-production. (ii) \emph{Évaluabilité} : la contribution est à la fois quantitative (précision
-$k$-NN de représentations gelées) et qualitative (cartes d'attention qui segmentent les objets),
-ce qui donne un rapport plus riche. (iii) \emph{Faisabilité} : l'algorithme tient en
-$\sim$15 lignes de pseudo-code (Algorithme~1 du papier), ce qui rend une reproduction réduite
-réaliste sur Colab. Les alternatives envisagées (MAE~\cite{he2022mae}, Barlow
-Twins~\cite{zbontar2021barlow}, DDPM~\cite{ho2020ddpm}) ont été écartées
-respectivement pour un résultat visuel moins frappant à petite échelle, un espace d'ablation plus
-pauvre, et un coût de calcul incompatible avec Colab.
+\paragraph{Pourquoi ce papier.} On a choisi ce papier pour trois raisons. D'abord la pertinence :
+le pré-entraînement auto-supervisé répond directement au problème du coût d'annotation, qui est
+un vrai goulot d'étranglement dans les pipelines réels, et DINOv2 (Meta, 2023) en est le
+descendant direct, largement utilisé en production aujourd'hui. Ensuite l'évaluabilité : la
+contribution est à la fois quantitative, avec la précision $k$-NN sur des représentations gelées,
+et qualitative, avec des cartes d'attention qui segmentent les objets, ce qui permet un rapport
+plus riche qu'une simple courbe de loss. Enfin la faisabilité : l'algorithme tient en une
+quinzaine de lignes de pseudo-code (Algorithme~1 du papier), ce qui rend une reproduction réduite
+réaliste sur Colab. On avait aussi envisagé MAE~\cite{he2022mae}, Barlow
+Twins~\cite{zbontar2021barlow} et DDPM~\cite{ho2020ddpm}, mais on les a écartés : MAE donne
+des résultats visuels moins frappants à petite échelle, Barlow Twins offre un espace d'ablation
+plus pauvre, et DDPM demande un budget de calcul incompatible avec Colab.
 
 \paragraph{Données et angle d'analyse.} Nous travaillons sur \textbf{STL-10}, choisi pour sa
 résolution $96\times96$ (adaptée à la tokenisation en patches d'un ViT) et son \emph{split non
 étiqueté} de 100\,000 images, conçu pour le SSL. Notre angle est double :
 \begin{enumerate}[nosep]
-  \item \textbf{quantitatif} --- la représentation auto-supervisée est-elle utile sans
-  fine-tuning ? Mesure par $k$-NN à features gelées, comparée à une ligne de base supervisée de
-  même architecture et à une borne basse (initialisation aléatoire) ;
-  \item \textbf{qualitatif et mécaniste} --- la propriété émergente (attention sémantique) se
+  \item \textbf{quantitatif} : la représentation auto-supervisée est-elle utile sans
+  fine-tuning ? On mesure ça avec un $k$-NN sur les features gelées, qu'on compare à une
+  baseline supervisée de même architecture et à une borne basse par initialisation aléatoire.
+  \item \textbf{qualitatif et mécaniste} : la propriété émergente (attention sémantique) se
   manifeste-t-elle à échelle réduite, et quels composants sont \emph{indispensables} pour éviter
   l'effondrement (\emph{collapse}) des représentations ? C'est l'objet de nos ablations.
 \end{enumerate}
@@ -127,9 +128,9 @@ en résume l'architecture.
 \centering
 \includegraphics[width=\linewidth]{../figures/fig_architecture.png}
 \caption[Architecture de DINO]{Architecture de DINO. Une image produit 2 vues globales ($96\times96$) et 4 vues locales
-($48\times48$). L'enseignant --- moyenne mobile (EMA) de l'étudiant, non entraîné par
-rétropropagation --- ne traite que les vues globales ; l'étudiant traite toutes les vues. Chaque
-branche enchaîne un ViT-Tiny puis une tête de projection ($K=2048$) ; la perte est l'entropie
+($48\times48$). L'enseignant, moyenne mobile (EMA) de l'étudiant, non entraîné par
+rétropropagation, ne traite que les vues globales. L'étudiant traite toutes les vues. Chaque
+branche enchaîne un ViT-Tiny puis une tête de projection ($K=2048$). La perte est l'entropie
 croisée entre la distribution \emph{enseignant} (centrée puis affûtée) et la distribution
 \emph{étudiant}, sur les paires de vues différentes.}
 \label{fig:arch}
@@ -170,8 +171,8 @@ A3).
 
 \subsection{Différences avec une ligne de base classique}
 Comparé à un entraînement supervisé standard, DINO se distingue par : (i) \emph{absence
-d'étiquettes} --- l'objectif est la cohérence inter-vues, pas la prédiction de classe ; (ii)
-\emph{cible dynamique} --- l'enseignant EMA remplace les étiquettes fixes ; (iii) \emph{pas de
+d'étiquettes} : l'objectif est la cohérence inter-vues, pas la prédiction de classe ; (ii)
+\emph{cible dynamique} : l'enseignant EMA remplace les étiquettes fixes ; (iii) \emph{pas de
 paires négatives} ni de mémoire de contraste (contrairement à SimCLR~\cite{chen2020simclr} /
 MoCo~\cite{he2020moco}) et \emph{pas de prédicteur} (contrairement à BYOL~\cite{grill2020byol}) ; (iv) \emph{évaluation à features gelées} ($k$-NN), sans
 tête de classification entraînée. Ces choix rendent la méthode simple à implémenter tout en
@@ -203,7 +204,7 @@ $48\times48$ avec \texttt{scale}=$[0{,}05,0{,}4]$. L'évaluation utilise un simp
   du backbone enseignant. Nous évaluons par $k$-NN plutôt que par un classifieur entraîné car cette
   méthode \emph{n'apprend rien} : chaque image de test est classée par vote de ses plus proches
   voisins dans l'espace des représentations. Le score reflète donc directement la qualité des
-  représentations apprises sans supervision --- un classifieur entraîné, lui, pourrait masquer des
+  représentations apprises sans supervision. Un classifieur entraîné, lui, pourrait masquer des
   représentations médiocres en s'y ajustant. C'est aussi le protocole d'évaluation du papier.
   \item \textbf{Cartes d'auto-attention} du token \texttt{[CLS]} du dernier bloc ViT : preuve
   qualitative de l'émergence d'une attention sémantique.
@@ -247,9 +248,9 @@ arbitrages figure dans \texttt{decisions.md}.
 Le notebook visait initialement le GPU \textbf{T4} de Google Colab (\texttt{FAST\_MODE} y est calibré
 pour $\sim$2--3\,h). Deux obstacles concrets nous ont fait migrer l'exécution :
 \begin{itemize}[nosep]
-  \item \textbf{Mémoire GPU.} Aux réglages par défaut (batch 256), la passe \emph{multi-crop} ---
+  \item \textbf{Mémoire GPU.} Aux réglages par défaut (batch 256), la passe \emph{multi-crop},
   six vues par image (2 globales $96^2$ + 4 locales $48^2$) traversant l'étudiant \emph{et}
-  l'enseignant, tête de dimension $K=2048$ --- déclenche une \emph{OutOfMemoryError} sur le T4
+  l'enseignant, tête de dimension $K=2048$, déclenche une \emph{OutOfMemoryError} sur le T4
   (16\,Go). On la contourne en divisant le batch par deux ($256\to128$) et en réduisant le taux
   d'apprentissage en proportion, au prix d'un réglage dégradé.
   \item \textbf{Coupures de session.} Le \emph{runtime} gratuit se déconnecte sur inactivité ;
@@ -281,10 +282,9 @@ avant l'échéance. Cette dualité résume un arbitrage fréquent en pratique :
 \subsection{Reproduction principale et comparaison aux lignes de base}
 Le Tableau~\ref{tab:main} (illustré par la Figure~\ref{fig:main}) compare la représentation DINO aux
 deux lignes de base de \emph{même architecture}. La borne basse (initialisation aléatoire) situe le hasard ; la ligne de base
-supervisée fournit la comparaison \guillemotleft\ équitable\,\guillemotright{} (même backbone, même protocole $k$-NN). On
-attend : $\text{aléatoire} \ll \text{DINO}$, et DINO se rapprochant de --- voire dépassant en
-$k$-NN --- la version supervisée entraînée sur seulement 5\,000 images étiquetées, illustrant
-l'intérêt d'exploiter 20\,000 images \emph{non} étiquetées.
+supervisée fournit la comparaison \guillemotleft\ équitable\,\guillemotright{} (même backbone, même protocole $k$-NN). On s'attend à ce que l'aléatoire soit largement en dessous de DINO, et que DINO se rapproche
+voire dépasse en $k$-NN la version supervisée entraînée sur seulement 5\,000 images étiquetées,
+ce qui illustrerait l'intérêt d'exploiter 20\,000 images \emph{non} étiquetées.
 
 \begin{table}[h]
 \centering
@@ -320,11 +320,11 @@ adaptatif (Figure~\ref{fig:adapt}), dont la précision $k$-NN sonde croît de fa
 
 \subsection{Résultat qualitatif : attention émergente}
 La Figure~\ref{fig:attn} montre les cartes d'auto-attention du token \texttt{[CLS]} (dernier
-bloc). On observe une attention spatialement structurée --- certaines têtes se concentrent plutôt
-sur l'objet que sur le fond ---, quoique nettement plus bruitée qu'avec les grands modèles du papier
-(Figures~1 et~3). Cette structuration, même imparfaite avec un ViT-Tiny peu entraîné, va dans le
-sens de la propriété émergente de DINO ; nous l'interprétons comme un indice qualitatif encourageant,
-pas comme une segmentation propre.
+bloc). On voit une attention spatialement structurée où certaines têtes se concentrent plutôt sur
+l'objet que sur le fond, même si c'est nettement plus bruité qu'avec les grands modèles du papier
+(Figures~1 et~3). Cette structuration reste imparfaite avec un ViT-Tiny peu entraîné, mais elle
+va quand même dans le sens de la propriété émergente de DINO. On l'interprète comme un signal
+qualitatif encourageant, pas comme une segmentation propre.
 
 \begin{figure}[h]
 \centering
@@ -350,24 +350,24 @@ les résultats.
 directe de l'étudiant à chaque pas (au lieu de l'EMA). \emph{Hypothèse} : la cible n'est plus
 stable, le modèle \emph{s'effondre} et la précision $k$-NN chute au niveau du hasard. C'est le
 composant le plus critique du papier (Table~7 : retrait du momentum $\rightarrow$ 0,1\,\%).
-\emph{Résultat} : \textbf{19,6\,\%} --- effondrement confirmé. La précision tombe \emph{sous} la
+\emph{Résultat} : \textbf{19,6\,\%}, effondrement confirmé. La précision tombe \emph{sous} la
 borne aléatoire (27,4\,\%, Tab.~\ref{tab:main}) et la perte de pré-entraînement \emph{diverge}
 ($5{,}5\to8{,}4$), double signature de l'effondrement. Le papier rapporte $0{,}1\,\%$ (le hasard
 sur 1000 classes) ; à 10 classes, où l'initialisation aléatoire atteint déjà 27,4\,\%,
-l'effondrement se lit comme un modèle \emph{pire} que l'aléatoire --- l'entraînement dégénéré a
+l'effondrement se lit comme un modèle \emph{pire} que l'aléatoire. L'entraînement dégénéré a
 détruit la structure pourtant présente à l'initialisation.
 
 \paragraph{A2 --- Sans multi-crop.} \emph{Changement} : on retire les vues locales (2 vues
 globales seulement). \emph{Hypothèse} : perte de l'objectif \guillemotleft\ local-to-global\,\guillemotright{}, baisse modérée
 de $\sim$3--5 points. \emph{Résultat} : \textbf{31,6\,\%}. \emph{Précaution sur la comparaison} :
 opposer naïvement A2 à DINO complet (37,2\,\%) donne $-5{,}6$ points, mais ce DINO complet est
-entraîné plus longtemps (60 époques adaptatives) --- l'écart mêle alors l'effet du multi-crop
+entraîné plus longtemps (60 époques adaptatives). L'écart mêle alors l'effet du multi-crop
 \emph{et} celui de la durée. La comparaison \emph{à durée égale} oppose A2 à la configuration
 complète de A3 ($\tau_t{=}0{,}04$ : 32,4\,\%, mêmes 20 époques ; seule la présence du multi-crop
 change) : le multi-crop ne vaut alors que \textbf{$\sim$0,8 point}, bien en deçà des $-4{,}9$ points
 du papier (300 époques). Le $-5{,}6$ se décompose ainsi en $\sim$4,8 pt de durée (20$\to$60 époques)
 et $\sim$0,8 pt de multi-crop. \emph{Interprétation honnête} : à 20 époques, l'objectif
-local-to-global du multi-crop n'a pas le temps de payer --- son bénéfice croît avec la durée ---,
+local-to-global du multi-crop n'a pas le temps de payer. Son bénéfice croît avec la durée,
 d'où une \emph{divergence} assumée avec le papier. La variante reste stable (enseignant EMA
 conservé), sans effondrement contrairement à A1.
 
@@ -411,7 +411,7 @@ A3  & \quad température $\tau_t = 0{,}10$  & 30,9 \\
 \caption[Ablations appariées et balayage de température]{\textbf{Gauche} : ablations \emph{à durée
 égale} (20 époques). Retirer le momentum (A1) effondre la représentation \emph{sous} la borne
 aléatoire ; retirer le multi-crop (A2) ne coûte que $-0{,}8$ pt face à la configuration complète
-(32,4\,\%) --- bien moins que les $-4{,}9$ pt du papier, l'objectif local-to-global n'ayant pas le
+(32,4\,\%), bien moins que les $-4{,}9$ pt du papier, l'objectif local-to-global n'ayant pas le
 temps de payer en 20 époques. \textbf{Droite} : balayage de la température enseignante (A3) ; la
 précision décroît de façon monotone quand $\tau_t$ augmente, $\tau_t{=}0{,}04$ (défaut du papier) en
 tête.}
@@ -419,8 +419,8 @@ tête.}
 \end{figure}
 
 \subsection{Extension personnelle : entraînement adaptatif piloté par la métrique aval}
-Plutôt que de fixer \emph{a priori} la taille du jeu non étiqueté --- un choix arbitraire qui
-influe fortement sur le résultat --- nous proposons un protocole d'entraînement \textbf{adaptatif}.
+Plutôt que de fixer \emph{a priori} la taille du jeu non étiqueté (un choix arbitraire qui
+influe fortement sur le résultat), nous proposons un protocole d'entraînement \textbf{adaptatif}.
 Le pool d'images non étiquetées croît par tranches de \texttt{CHUNK} (4\,000) ; après chaque
 tranche, on entraîne quelques époques puis on évalue un \emph{k-NN sonde} rapide sur un petit
 échantillon tenu à l'écart (1\,000 réf./1\,000 requêtes). L'entraînement s'\textbf{arrête
@@ -468,15 +468,14 @@ $k$-NN sonde 31,6\,\%.}
 soit $+9{,}8$ points), confirmant que la self-distillation apprend des représentations utiles
 \emph{sans aucune étiquette} à échelle réduite. L'ablation A1 produit un effondrement franc
 (19,6\,\%, sous l'aléatoire, perte divergente), validant le rôle \emph{essentiel} de l'enseignant
-EMA --- exactement la conclusion de la Table~7 du papier (retrait du momentum $\to0{,}1\,\%$).
+EMA, exactement la conclusion de la Table~7 du papier (retrait du momentum $\to0{,}1\,\%$).
 L'effet du \emph{multi-crop}, en revanche, ne se reproduit pas : mesuré \emph{à durée égale} (A2
 contre la configuration complète de A3, mêmes 20 époques), il ne vaut que $\sim$0,8 pt, loin des
-$-4{,}9$ pt du papier --- vraisemblablement parce qu'à 20 époques son objectif local-to-global n'a
+$-4{,}9$ pt du papier, vraisemblablement parce qu'à 20 époques son objectif local-to-global n'a
 pas le temps de payer. Comparer naïvement A2 à DINO complet (60 époques) gonflait cet écart à
 $-5{,}6$ pt en y mêlant la durée d'entraînement. Le balayage de température (A3) confirme, lui, la
 direction du papier (plus $\tau_t$ est bas, meilleure est la sonde). Enfin, on observe une attention spatialement structurée
-(concentrée sur l'objet) même avec un ViT-Tiny peu entraîné, indice qualitatif --- quoique bruité
---- de la propriété émergente (Figure~\ref{fig:attn}).
+(concentrée sur l'objet) même avec un ViT-Tiny peu entraîné, indice qualitatif (quoique bruité) de la propriété émergente (Figure~\ref{fig:attn}).
 
 \paragraph{Ce qui fonctionne mal ou reste incertain.} Contrairement au papier, où le $k$-NN DINO
 rivalise avec les features supervisées, notre DINO (37,2\,\%) reste \emph{en deçà} du supervisé
@@ -484,22 +483,22 @@ rivalise avec les features supervisées, notre DINO (37,2\,\%) reste \emph{en de
 du régime où le SSL brille (le papier utilise 1,28\,M d'images, 300 époques) ; (ii) $K=2048$ et un
 ViT-Tiny limitent la capacité ; (iii) le $k$-NN, mesuré avec un seul $k$ et une seule graine
 aléatoire, peut varier d'une exécution à l'autre. La courbe adaptative (Figure~\ref{fig:adapt}) étaye cette lecture : la précision sonde
-\emph{croît encore} à 24\,000 images ($23{,}7\to31{,}6$\,\%) sans saturer pleinement --- l'écart au
+\emph{croît encore} à 24\,000 images ($23{,}7\to31{,}6$\,\%) sans saturer pleinement. L'écart au
 supervisé est donc une limite de \emph{données/calcul}, non un défaut de la méthode, et se
 réduirait à plus grande échelle, en cohérence avec le papier.
 
 \paragraph{Différences avec le papier et limites.} Nos chiffres absolus ne sont pas comparables à
 ceux du papier (dataset, résolution, durée, taille de $K$ et de batch tous réduits). Les limites
-principales : (i) \emph{budget de calcul} --- une seule exécution, sans moyenne sur plusieurs
-essais ; (ii) \emph{évaluation} --- $k$-NN uniquement, sans entraîner de classifieur linéaire sur
+principales : (i) \emph{budget de calcul} : une seule exécution, sans moyenne sur plusieurs
+essais ; (ii) \emph{évaluation} : $k$-NN uniquement, sans entraîner de classifieur linéaire sur
 les représentations gelées ; (iii) \emph{échelle}
---- le régime de données est trop petit pour que l'avantage du SSL sur le supervisé se manifeste
+: le régime de données est trop petit pour que l'avantage du SSL sur le supervisé se manifeste
 pleinement. Des extensions naturelles (hors budget ici) seraient : augmenter le sous-échantillon
 et les époques (\texttt{FAST\_MODE=False}), et répéter l'entraînement avec plusieurs graines
 aléatoires pour vérifier la stabilité des résultats.
 
-\paragraph{Conclusion.} Cette reproduction réduite isole et teste l'idée scientifique de DINO ---
-la self-distillation sans étiquettes avec enseignant EMA, centrage et affûtage --- montre comment
+\paragraph{Conclusion.} Cette reproduction réduite isole et teste l'idée scientifique de DINO,
+la self-distillation sans étiquettes avec enseignant EMA, centrage et affûtage, montre comment
 elle se transpose à un cadre Colab/STL-10, et identifie par ablation quels composants modifient
 les résultats et pourquoi. Conformément à l'esprit du projet, nous privilégions une analyse
 honnête des résultats (y compris négatifs) à la course à la performance.
